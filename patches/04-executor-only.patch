@@ -1,0 +1,14 @@
+--- a/Zend/zend_execute_API.c
++++ b/Zend/zend_execute_API.c
+@@ -336,6 +336,11 @@
+ 
+ 	zend_shutdown_fpu(TSRMLS_C);
+ 
++	/* Reset request-owned executor references after teardown. These values
++	 * must not survive into a later request in the same worker. */
++	EG(exception) = NULL;
++	EG(user_error_handler) = NULL;
++	EG(user_exception_handler) = NULL;
+ 	EG(active) = 0;
+ }
+ /* }}} */

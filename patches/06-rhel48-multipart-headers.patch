@@ -1,0 +1,34 @@
+--- a/main/rfc1867.c
++++ b/main/rfc1867.c
+@@ -396,6 +396,16 @@
+ }
+ 
+ /* parse headers */
++/* Forward declaration: defined below the multipart header parser. */
++static char *php_mime_get_hdr_value(zend_llist header, char *key);
++
++/* Retain only headers consumed by RFC1867. */
++static int php54_mime_header_needed(const char *name)
++{
++    return strcasecmp(name, "Content-Disposition") == 0 ||
++           strcasecmp(name, "Content-Type") == 0;
++}
++
+ static int multipart_buffer_headers(multipart_buffer *self, zend_llist *header TSRMLS_DC)
+ {
+ 	char *line;
+@@ -438,6 +448,14 @@
+ 			*value = '\0';
+ 			do { value++; } while(isspace(*value));
+ 
++			/* The previous header has already been flushed.  Do not
++			 * accumulate discarded or duplicate header values, including
++			 * their folded continuation lines. */
++			if (!php54_mime_header_needed(line) ||
++			    php_mime_get_hdr_value(*header, line) != NULL) {
++				key = NULL;
++				continue;
++			}
+ 			key = estrdup(line);
+ 			smart_str_appends(&buf_value, value);
+ 		} else if (buf_value.c) { /* If no ':' on the line, add to previous line */

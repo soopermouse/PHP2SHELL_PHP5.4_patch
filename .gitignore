@@ -1,0 +1,10 @@
+*.rpm
+*.src.rpm
+*.log
+*.rej
+*.orig
+.DS_Store
+__pycache__/
+.rpmbuild/
+build/
+rpm/0[1-6]-*.patch

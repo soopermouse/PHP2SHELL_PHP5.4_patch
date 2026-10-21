@@ -1,0 +1,106 @@
+--- a/Zend/zend_alloc.c
++++ b/Zend/zend_alloc.c
+@@ -19,6 +19,8 @@
+ */
+ 
+ /* $Id$ */
++
++/* Fail closed on allocator overflow without zend_bailout or user error handlers. */
+ 
+ #include "zend.h"
+ #include "zend_alloc.h"
+@@ -662,8 +664,24 @@
+ static void _zend_mm_free_int(zend_mm_heap *heap, void *p ZEND_FILE_LINE_DC ZEND_FILE_LINE_ORIG_DC);
+ static void *_zend_mm_realloc_int(zend_mm_heap *heap, void *p, size_t size ZEND_FILE_LINE_DC ZEND_FILE_LINE_ORIG_DC);
+ 
++ZEND_API void zend_mm_safe_error_ex(const char *format, ...)
++{
++    char buf[512];
++    va_list args;
++    va_start(args, format);
++    vsnprintf(buf, sizeof(buf), format, args);
++    va_end(args);
++    fprintf(stderr, "\nFatal error: %s\n", buf);
++#ifdef ZEND_WIN32
++    fflush(stderr);
++#endif
++    _exit(1);
++}
++
+ static inline unsigned int zend_mm_high_bit(size_t _size)
+ {
++
++
+ #if defined(__GNUC__) && (defined(__native_client__) || defined(i386))
+ 	unsigned int n;
+ 
+@@ -2468,7 +2486,7 @@
+ 	       "rm"(offset));
+ 	
+ 	if (UNEXPECTED(overflow)) {
+-		zend_error_noreturn(E_ERROR, "Possible integer overflow in memory allocation (%zu * %zu + %zu)", nmemb, size, offset);
++		zend_mm_safe_error_ex("Possible integer overflow in memory allocation (%zu * %zu + %zu)", nmemb, size, offset);
+ 		return 0;
+ 	}
+ 	return res;
+@@ -2498,7 +2516,7 @@
+ #undef LP_SUFF
+ 
+         if (UNEXPECTED(overflow)) {
+-                zend_error_noreturn(E_ERROR, "Possible integer overflow in memory allocation (%zu * %zu + %zu)", nmemb, size, offset);
++                zend_mm_safe_error_ex("Possible integer overflow in memory allocation (%zu * %zu + %zu)", nmemb, size, offset);
+                 return 0;
+         }
+         return res;
+@@ -2511,7 +2529,7 @@
+ 	zend_ulong64 res = (zend_ulong64)nmemb * (zend_ulong64)size + (zend_ulong64)offset;
+ 
+ 	if (UNEXPECTED(res > (zend_ulong64)0xFFFFFFFFL)) {
+-		zend_error_noreturn(E_ERROR, "Possible integer overflow in memory allocation (%zu * %zu + %zu)", nmemb, size, offset);
++		zend_mm_safe_error_ex("Possible integer overflow in memory allocation (%zu * %zu + %zu)", nmemb, size, offset);
+ 		return 0;
+ 	}
+ 	return (size_t) res;
+@@ -2526,7 +2544,7 @@
+ 	double _delta = (double)res - _d;
+ 
+ 	if (UNEXPECTED((_d + _delta ) != _d)) {
+-		zend_error_noreturn(E_ERROR, "Possible integer overflow in memory allocation (%zu * %zu + %zu)", nmemb, size, offset);
++		zend_mm_safe_error_ex("Possible integer overflow in memory allocation (%zu * %zu + %zu)", nmemb, size, offset);
+ 		return 0;
+ 	}
+ 	return res;
+--- a/Zend/zend_alloc.h
++++ b/Zend/zend_alloc.h
+@@ -230,6 +230,9 @@
+ 	void *data;
+ };
+ 
++/* Non-returning, allocation-free fatal diagnostics for allocator overflow. */
++ZEND_API void zend_mm_safe_error_ex(const char *format, ...);
++
+ ZEND_API zend_mm_heap *zend_mm_startup_ex(const zend_mm_mem_handlers *handlers, size_t block_size, size_t reserve_size, int internal, void *params);
+ ZEND_API zend_mm_heap *zend_mm_set_heap(zend_mm_heap *new_heap TSRMLS_DC);
+ ZEND_API zend_mm_storage *zend_mm_get_storage(zend_mm_heap *heap);
+--- a/Zend/zend_strtod.c
++++ b/Zend/zend_strtod.c
+@@ -491,7 +491,7 @@
+ 		rv = (Bigint *)MALLOC(sizeof(Bigint) + (x-1)*sizeof(Long));
+ 		if (!rv) {
+ 			_THREAD_PRIVATE_MUTEX_UNLOCK(dtoa_mutex);
+-			zend_error(E_ERROR, "Balloc() failed to allocate memory");
++			zend_mm_safe_error_ex("Balloc() failed to allocate memory");
+ 		}
+ 		rv->k = k;
+ 		rv->maxwds = x;
+--- a/Zend/zend_llist.c
++++ b/Zend/zend_llist.c
+@@ -117,6 +117,8 @@
+ 		current = next;
+ 	}
+ 
++	l->head = NULL;
++	l->tail = NULL;
+ 	l->count = 0;
+ }
+ 

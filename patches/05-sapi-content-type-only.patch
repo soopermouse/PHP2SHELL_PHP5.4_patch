@@ -1,0 +1,10 @@
+--- a/main/SAPI.c
++++ b/main/SAPI.c
+@@ -521,6 +521,7 @@
+ 	}
+ 	if (SG(request_info).content_type_dup) {
+ 		efree(SG(request_info).content_type_dup);
++		SG(request_info).content_type_dup = NULL;
+ 	}
+ 	if (SG(request_info).current_user) {
+ 		efree(SG(request_info).current_user);

@@ -1,0 +1,41 @@
+--- a/php.spec
++++ b/php.spec
+@@ -69,7 +69,7 @@
+ Summary: PHP scripting language for creating dynamic web sites
+ Name: php
+ Version: 5.4.16
+-Release: 48%{?dist}
++Release: 48%{?dist}.securityrc1
+ # All files licensed under PHP version 3.01, except
+ # Zend is licensed under Zend
+ # TSRM is licensed under BSD
+@@ -219,6 +219,14 @@
+ Patch166: php-5.4.16-CVE-2018-10547.patch
+ Patch167: php-5.4.16-CVE-2019-11043.patch
+ 
++# Experimental 2026 security backport candidate, not vendor-certified
++Patch200: 01-oom-state-PARTIAL.patch
++Patch201: 02-allocator-llist-FIXED.patch
++Patch202: 03-multipart-body-parts.patch
++Patch203: 04-executor-only.patch
++Patch204: 05-sapi-content-type-only.patch
++Patch205: 06-rhel48-multipart-headers.patch
++
+ 
+ BuildRequires: bzip2-devel, curl-devel >= 7.9, gmp-devel
+ BuildRequires: httpd-devel >= 2.0.46-1, pam-devel
+@@ -807,6 +815,14 @@
+ %patch166 -p1 -b .cve10547
+ %patch167 -p1 -b .cve11043
+ 
++# Candidate CVE-2026-109618 / CVE-2026-109619 backport
++%patch200 -p1
++%patch201 -p1
++%patch202 -p1
++%patch203 -p1
++%patch204 -p1
++%patch205 -p1
++
+ 
+ # Prevent %%doc confusion over LICENSE files
+ cp Zend/LICENSE Zend/ZEND_LICENSE
