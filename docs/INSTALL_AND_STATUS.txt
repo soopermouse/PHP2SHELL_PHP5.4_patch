@@ -1,27 +1,41 @@
-PHP 5.4.16-48.el7 — COMPLETE RC1 SOURCE PATCH PACKAGE
-2026-10-21
+PHP 5.4.16-48.el7 security backport (RC1) — install notes
+==========================================================
 
-CONTENTS
-- php-5.4.16-48.el7.src.rpm: original Red Hat source RPM.
-- php54-RHEL48-CVE-2026-109618-109619-COMBINED.patch: all six security patch increments in order, intended for an ALREADY RED HAT PATCHED PHP 5.4.16-48.el7 source tree. Do not apply to pristine upstream PHP 5.4.16.
-- rpm-kit/: six individual tested increments, integrated php.spec, SPEC_INTEGRATION.diff, build-rc.sh and SHA256SUMS. This is the preferred RPM build route.
-- release-gate/: Apache mod_php runtime staging verification kit v2.
+What's here
+-----------
+- patches/01..06-*.patch
+    The six source changes, in the order the spec applies them.
+- patches/php54-RHEL48-CVE-2026-109618-109619-COMBINED.patch
+    The same six changes as a single diff, for an already Red Hat-patched
+    5.4.16-48 tree. Do not apply this and the six split patches both.
+- rpm/
+    The -48 spec with the patches wired in (Patch200-205), the spec diff,
+    and the build script.
+- tests/release-gate/
+    Build and Apache mod_php staging checks.
 
-BUILD ON AUTHORIZED RHEL7-COMPATIBLE HOST
-  cd rpm-kit
-  sha256sum -c SHA256SUMS
-  bash build-rc.sh ../php-5.4.16-48.el7.src.rpm
+You supply the original php-5.4.16-48.el7.src.rpm yourself, from your RHEL
+subscription. It is not included here.
 
-WARNING: build-rc.sh installs the source RPM into the chosen RPM_TOPDIR and builds packages; use an isolated build host and clean topdir. Do not run on production.
+Building
+--------
+On an isolated RHEL 7 build host, not production:
 
-DO NOT APPLY BOTH THE COMBINED PATCH AND THE SIX INDIVIDUAL PATCHES.
-The combined patch is a source-level convenience artifact, not a replacement for the RPM spec patch series.
+    cd php54-rhel7-security-backport
+    sha256sum -c SHA256SUMS
+    bash build-from-repo.sh /absolute/path/to/php-5.4.16-48.el7.src.rpm
 
-DONE: Consolidated six source changes; original source RPM included; original RPM integration kit and v2 release gate included.
-EXTERNALLY REPORTED: 101 patch preparation without rejects, exact source equivalence, CLI/CGI/FPM build, 7,853 pass / 113 existing failures, targeted exploit-path tests.
-OPEN: Actual binary RPM build, Apache mod_php validation, signing, rollback, independent security signoff.
-This package is NOT a compiled or production-certified RPM. The CVE fixes have not been independently audited for complete bypass coverage.
+build-rc.sh installs the source RPM into your rpmbuild tree and runs
+rpmbuild -bp/-bs/-ba, so use a clean, dedicated build area.
 
-ADD: Combined patch, full source package, original source RPM, release gate v2.
-REPLACE: Only php.spec within isolated RPM build tree using rpm-kit/php.spec.
-DELETE/EXCLUDE: Do not apply obsolete experimental patch versions or both combined and split patches.
+Status
+------
+The six patches, the combined patch, the spec integration and the release-gate
+scripts are all in place, and the source side has been tested on a local
+CLI/CGI/FPM build: it compiles, passes the regression suite, and the targeted
+OOM, multipart and request-state cases behave correctly.
+
+Before this can go to production it still needs the binary RPMs built, testing
+under Apache mod_php on staging, package signing, a rollback check, and an
+independent security review. Until then it's a source candidate, not an
+approved update.

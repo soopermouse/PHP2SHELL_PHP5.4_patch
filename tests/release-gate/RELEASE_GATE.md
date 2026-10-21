@@ -1,44 +1,51 @@
-# PHP 5.4 RHEL7 adapt6 RC1 — release gate
+# Release gate
 
-## What this is
-Read-only verification and staging inventory scripts for the existing six-patch source kit. It is **not** a new source patch, a compiled RPM, a signed package, or a certification of CVE remediation.
+The scripts here check a build of the backport before it's allowed near
+production. They don't change anything they inspect — they read package
+metadata and the running Apache/PHP configuration and fail if something is
+missing. Building the RPMs and testing under mod_php is still on you; these
+just stop a half-checked build from being called ready.
 
-## Verified here
-- The original source kit's `SHA256SUMS` validates all six patches, php.spec, and build-rc.sh.
-- `bash -n` passes on the original build script and the two scripts in this package.
-- `php.spec` declares Patch200–205 and applies them in numeric order.
-- No RPM binary has been built in this environment.
+## On the build host
 
-## Build host workflow
-1. In an isolated authorized RHEL7-compatible build environment, install all build dependencies and `rpm-build`.
-2. Place `php-5.4.16-48.el7.src.rpm` alongside the previously delivered `PHP54_RHEL48_adapt6_RPM_SOURCE_KIT.zip` extracted contents.
-3. Run `bash build-rc.sh /absolute/path/php-5.4.16-48.el7.src.rpm 2>&1 | tee rc1-build.log` from the extracted source-kit directory.
-4. Run `bash verify-build.sh 2>&1 | tee rc1-package-verification.log` from this release-gate directory.
-5. Preserve `rc1-build.log`, the full package list, SHA-256 digests, source RPM, and binary RPMs. Review `rpm -K` results; unsigned packages must not be presented as signed.
+1. Build the RPMs on an isolated RHEL 7 box (see the repo README), keeping the
+   build log:
 
-## Staging gate
-- On a non-production host with the same Apache MPM, modules, extensions and configuration as production, install the **full matching RPM set** in a reversible snapshot.
-- Run `bash staging-checks.sh > rc1-staging-inventory.log 2>&1`.
-- Confirm Apache uses actual mod_php rather than PHP-FPM before claiming mod_php coverage.
-- Exercise multipart upload, duplicate/folded headers, large junk-header input, `max_multipart_body_parts` default/0/2, repeated requests on the same worker, and safe OOM cases. Use only authorized test fixtures; don't run adversarial inputs against production.
-- Compare results with the prepatch reference; inspect error logs, process restarts and crashes.
-- Obtain independent source review and documented rollback approval.
+   ```bash
+   bash build-rc.sh /absolute/path/php-5.4.16-48.el7.src.rpm 2>&1 | tee rc1-build.log
+   ```
 
-## Release decision
-NO-GO until binary build, Apache mod_php tests, signature checks, staged rollback, and independent security sign-off are complete. Reported Claude tests cover CLI/CGI/FPM, not production Apache mod_php.
+2. From this directory, check the output packages:
 
-## Handoff
-DONE: Source kit hash check; Bash syntax checks; verification and staging scripts created.
-PARTIAL: Source patch testing is reported by Claude, not reproduced here.
-OPEN: RPM build; mod_php runtime tests; signature verification; staged rollback; security sign-off.
-NEXT: Build on authorized RHEL7-compatible host and attach build and staging logs.
-ADD: verify-build.sh, staging-checks.sh, RELEASE_GATE.md.
-REPLACE: None. DELETE: None. Keep frozen adapt6 patch sources unchanged.
+   ```bash
+   bash verify-build.sh 2>&1 | tee rc1-package-verification.log
+   ```
 
-## V2 correction: verify effective mod_php settings (mandatory)
-`php -i` reports **CLI**, not Apache configuration. `staging-checks.sh` now **fails closed** if the Apache runtime probe is missing, inaccessible, or does not return `sapi=apache2handler` and all three required settings. The CLI values are printed only for comparison, not accepted as mod_php evidence.
+3. Keep the build log, the package list, the SHA-256 digests, and the RPMs.
+   Look at the `rpm -K` output — an unsigned package is unsigned, don't let it
+   be presented otherwise.
 
-On an **isolated staging host only**, manually place `modphp-runtime-probe.php` in an Apache-served directory and restrict access using Apache 2.4 configuration, for example:
+## On staging
+
+Use a non-production host set up like production — same Apache MPM, modules,
+extensions and config — and install the full matching RPM set as a reversible
+snapshot so you can roll back.
+
+Inventory the host and verify the effective mod_php settings:
+
+```bash
+MODPHP_PROBE_URL=http://127.0.0.1:80/modphp-runtime-probe.php bash staging-checks.sh \
+  > rc1-staging-inventory.log 2>&1
+```
+
+Reading the effective settings matters, because `php -i` shows the **CLI**
+configuration, not what Apache actually runs with. `staging-checks.sh` fails
+closed: if the Apache probe is missing or unreachable, or doesn't report
+`sapi=apache2handler` with all three directives present, it stops. The CLI
+values are printed only for comparison.
+
+To use the probe, put `modphp-runtime-probe.php` in an Apache-served directory
+on the staging host and lock it to loopback in the vhost config:
 
 ```apache
 <Files "modphp-runtime-probe.php">
@@ -46,19 +53,26 @@ On an **isolated staging host only**, manually place `modphp-runtime-probe.php` 
 </Files>
 ```
 
-Confirm that the endpoint is accessible only via loopback and that it is served by the intended Apache virtual host. If multiple virtual hosts exist, arrange a dedicated localhost-bound staging vhost; do not point this check at production. Then run, using the correct staging port and path:
+The probe also refuses any request whose `REMOTE_ADDR` isn't loopback, and the
+script only does a localhost `curl` GET — no external calls, no server changes.
+If there are several vhosts, give it a dedicated localhost-only staging vhost;
+never point it at production. A passing probe confirms the settings are in
+place under mod_php — it does **not** prove the security behaviour or approve
+the release.
 
-```bash
-MODPHP_PROBE_URL=http://127.0.0.1:80/modphp-runtime-probe.php bash staging-checks.sh \
-  > rc1-staging-inventory.log 2>&1
-```
+**Remove the probe as soon as you're done**, confirm the URL returns 404, and
+take out its Apache rule. Don't leave it (or any `phpinfo()` page) deployed.
 
-The probe additionally rejects non-loopback `REMOTE_ADDR` in PHP. The script uses a **localhost HTTP GET** via `curl` (no external network access or server modifications). It verifies SAPI, version family, and the presence/type of the effective `memory_limit`, `max_multipart_body_parts`, and `session.upload_progress.enabled` values. The operator must check those values against approved settings and confirm the installed RPM release separately. A passing probe does **not** prove the security behavior under Apache or constitute release approval.
+Then exercise the actual behaviour under Apache: multipart uploads,
+duplicate/folded headers, a part with a large number of junk headers,
+`max_multipart_body_parts` at the default, 0 and 2, repeated requests on the
+same worker, and controlled OOM cases. Use only test fixtures you control;
+don't run adversarial input at production. Compare against the pre-patch build
+and watch the error log for worker restarts or crashes.
 
-**Immediately remove the temporary PHP probe** from the web root after the check, verify it returns HTTP 404, and remove its dedicated Apache access rule. Do not leave a public `phpinfo()` page or this probe deployed.
+## Decision
 
-### V2 manifest
-- **REPLACE:** `staging-checks.sh`, `RELEASE_GATE.md`
-- **ADD:** `modphp-runtime-probe.php`
-- **UNCHANGED:** `verify-build.sh`; all six RC1 source patches, `php.spec`, and `build-rc.sh`
-- **DELETE after staging:** deployed copy of `modphp-runtime-probe.php` and its temporary Apache rule
+No-go until the RPMs are built, mod_php is tested on staging, signatures are
+checked, rollback is verified, and someone other than the author has reviewed
+the source and signed off. The source-side testing done so far is on a
+CLI/CGI/FPM build, which is not the same as production Apache mod_php.
